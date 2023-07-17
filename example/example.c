@@ -23,6 +23,7 @@ int main(int argc, char **argv)
     (void)argv;
     package_t pkg;
     struct stat info;
+    package_file_t *file;
 
     if (package_create(&pkg))
     {
@@ -31,7 +32,7 @@ int main(int argc, char **argv)
     }
 
     // add a file
-    package_file_t *file = package_add_file(&pkg, "example.txt");
+    file = package_add_file(&pkg, "example.txt");
     if (file == NULL)
     {
         printf("Failed to add file\n");
@@ -41,6 +42,22 @@ int main(int argc, char **argv)
     // add data
     const char data[] = "i have no idea what i'm doing";
     if (package_file_write(file, (uint8_t *)data, strlen(data)) != strlen(data))
+    {
+        printf("Failed to write data\n");
+        return 1;
+    }
+
+    // add another file
+    file = package_add_file(&pkg, "client/index.js");
+    if (file == NULL)
+    {
+        printf("Failed to add file\n");
+        return 1;
+    }
+
+    // add data
+    const char data2[] = "console.log('yup yep');";
+    if (package_file_write(file, (uint8_t *)data2, strlen(data2)) != strlen(data2))
     {
         printf("Failed to write data\n");
         return 1;
@@ -76,7 +93,7 @@ int main(int argc, char **argv)
     // extract the files
     for (uint32_t i = 0; i < pkg.num_entries; ++i)
     {
-        package_file_t *file = package_get_file(&pkg, i);
+        file = package_get_file(&pkg, i);
 
         uint32_t size = package_file_size(file);
         altv_hash_t hash = package_file_hash(file);

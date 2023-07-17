@@ -13,58 +13,6 @@ struct package_file_t
     uint8_t *data;
 };
 
-int add_package_file(package_t *package, file_entry_t *entry, uint8_t *data)
-{
-
-    if (package->entries == NULL)
-    {
-        package->entries = (package_file_t **)malloc(sizeof(package_file_t *));
-
-        if (package->entries == NULL)
-        {
-            return 1;
-        }
-
-        package->entries[0] = (package_file_t *)malloc(sizeof(package_file_t));
-
-        if (package->entries[0] == NULL)
-        {
-            free(package->entries);
-            return 1;
-        }
-
-        memset(package->entries[0], 0, sizeof(package_file_t));
-
-        package->entries[0]->entry = *entry;
-        package->entries[0]->data = data;
-    }
-    else
-    {
-        package_file_t **new_entries = (package_file_t **)realloc(package->entries, sizeof(package_file_t *) * (package->num_entries + 1));
-
-        if (new_entries == NULL)
-        {
-            return 1;
-        }
-
-        package->entries = new_entries;
-
-        package->entries[package->num_entries] = (package_file_t *)malloc(sizeof(package_file_t));
-
-        if (package->entries[package->num_entries] == NULL)
-        {
-            return 1;
-        }
-
-        memset(package->entries[package->num_entries], 0, sizeof(package_file_t));
-
-        package->entries[package->num_entries]->entry = *entry;
-        package->entries[package->num_entries]->data = data;
-    }
-
-    return 0;
-}
-
 uint32_t package_open(package_t *package, const char *package_path)
 {
     uint32_t magic;
@@ -125,6 +73,14 @@ uint32_t package_open(package_t *package, const char *package_path)
     if (fseek(package_file, data_offset, SEEK_SET))
     {
         // Package file corrupted
+        package_close(package);
+        return 1;
+    }
+
+    package->entries = (package_file_t **)malloc(sizeof(package_file_t *) * package->num_entries);
+    if (package->entries == NULL)
+    {
+        // Out of memory
         package_close(package);
         return 1;
     }
@@ -191,13 +147,19 @@ uint32_t package_open(package_t *package, const char *package_path)
 
         xor_file_data(&entries[i], file_data);
 
-        if (add_package_file(package, &entries[i], file_data))
+        package_file_t *file = (package_file_t *)malloc(sizeof(package_file_t));
+        if (file == NULL)
         {
             // Out of memory
-            free(entries);
+            free(file_data);
             package_close(package);
             return 1;
         }
+
+        memset(file, 0, sizeof(package_file_t));
+        file->entry = entries[i];
+        file->data = file_data;
+        package->entries[i] = file;
     }
 
     free(entries);
@@ -311,6 +273,8 @@ void package_close(package_t *package)
 
         free(package->entries);
     }
+
+    memset(package, 0, sizeof(package_t));
 }
 
 package_file_t *package_get_file(package_t *package, uint32_t index)
