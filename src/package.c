@@ -13,7 +13,7 @@ struct package_file_t
     uint8_t *data;
 };
 
-int add_package_file(package_t* package, file_entry_t* entry, uint8_t* data)
+int add_package_file(package_t *package, file_entry_t *entry, uint8_t *data)
 {
 
     if (package->entries == NULL)
@@ -72,7 +72,7 @@ uint32_t package_open(package_t *package, const char *package_path)
     uint8_t *file_data;
     uint32_t data_offset;
     uint32_t file_size;
-    file_entry_t* entries;
+    file_entry_t *entries;
     FILE *package_file;
 
     if (package == NULL)
@@ -352,7 +352,7 @@ package_file_t *package_add_file(package_t *package, const char *file_name)
     // if there are no entries, allocate the entries
     if (package->entries == NULL)
     {
-        package->entries = (package_file_t **)malloc(sizeof(package_file_t*));
+        package->entries = (package_file_t **)malloc(sizeof(package_file_t *));
         if (package->entries == NULL)
         {
             return NULL;
@@ -370,7 +370,7 @@ package_file_t *package_add_file(package_t *package, const char *file_name)
     else
     {
         // realloc the entries
-        package_file_t **new_entries = (package_file_t **)realloc(package->entries, sizeof(package_file_t*) * (package->num_entries + 1));
+        package_file_t **new_entries = (package_file_t **)realloc(package->entries, sizeof(package_file_t *) * (package->num_entries + 1));
         if (new_entries == NULL)
         {
             return 0;
