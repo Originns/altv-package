@@ -13,6 +13,58 @@ struct package_file_t
     uint8_t *data;
 };
 
+int add_package_file(package_t* package, file_entry_t* entry, uint8_t* data)
+{
+
+    if (package->entries == NULL)
+    {
+        package->entries = (package_file_t **)malloc(sizeof(package_file_t *));
+
+        if (package->entries == NULL)
+        {
+            return 1;
+        }
+
+        package->entries[0] = (package_file_t *)malloc(sizeof(package_file_t));
+
+        if (package->entries[0] == NULL)
+        {
+            free(package->entries);
+            return 1;
+        }
+
+        memset(package->entries[0], 0, sizeof(package_file_t));
+
+        package->entries[0]->entry = *entry;
+        package->entries[0]->data = data;
+    }
+    else
+    {
+        package_file_t **new_entries = (package_file_t **)realloc(package->entries, sizeof(package_file_t *) * (package->num_entries + 1));
+
+        if (new_entries == NULL)
+        {
+            return 1;
+        }
+
+        package->entries = new_entries;
+
+        package->entries[package->num_entries] = (package_file_t *)malloc(sizeof(package_file_t));
+
+        if (package->entries[package->num_entries] == NULL)
+        {
+            return 1;
+        }
+
+        memset(package->entries[package->num_entries], 0, sizeof(package_file_t));
+
+        package->entries[package->num_entries]->entry = *entry;
+        package->entries[package->num_entries]->data = data;
+    }
+
+    return 0;
+}
+
 uint32_t package_open(package_t *package, const char *package_path)
 {
     uint32_t magic;
@@ -20,6 +72,7 @@ uint32_t package_open(package_t *package, const char *package_path)
     uint8_t *file_data;
     uint32_t data_offset;
     uint32_t file_size;
+    file_entry_t* entries;
     FILE *package_file;
 
     if (package == NULL)
@@ -76,38 +129,44 @@ uint32_t package_open(package_t *package, const char *package_path)
         return 1;
     }
 
-    package->entries = (package_file_t *)malloc(sizeof(package_file_t) * package->num_entries);
-    if (package->entries == NULL)
+    entries = (file_entry_t *)malloc(sizeof(file_entry_t) * package->num_entries);
+    if (entries == NULL)
     {
         // Out of memory
+        free(entries);
         package_close(package);
         return 1;
     }
 
     for (uint32_t i = 0; i != package->num_entries; ++i)
     {
-        if (fread(&package->entries[i].entry, 0x10, 1, package_file) != 1)
+        if (fseek(package_file, data_offset + i * 0x10, SEEK_SET))
+        {
+            // Package file corrupted
+            free(entries);
+            package_close(package);
+            return 1;
+        }
+
+        if (fread(&entries[i], 0x10, 1, package_file) != 1)
+        {
+            // Package file corrupted
+            free(entries);
+            package_close(package);
+            return 1;
+        }
+
+        xor_file_entry((uint8_t *)&entries[i], i, package->num_entries, file_size);
+
+        // add the data
+        if (entries[i].offset + entries[i].size > data_offset)
         {
             // Package file corrupted
             package_close(package);
             return 1;
         }
 
-        xor_file_entry((uint8_t *)&package->entries[i].entry, i, package->num_entries, file_size);
-
-        package->entries[i].data = NULL;
-    }
-    // validate the entries
-    for (uint32_t i = 0; i != package->num_entries; ++i)
-    {
-        if (package->entries[i].entry.offset + package->entries[i].entry.size > data_offset)
-        {
-            // Package file corrupted
-            package_close(package);
-            return 1;
-        }
-
-        file_data = (uint8_t *)malloc(package->entries[i].entry.size);
+        file_data = (uint8_t *)malloc(entries[i].size);
         if (file_data == NULL)
         {
             // Out of memory
@@ -116,24 +175,32 @@ uint32_t package_open(package_t *package, const char *package_path)
         }
 
         // read the file data
-        if (fseek(package_file, package->entries[i].entry.offset, SEEK_SET))
+        if (fseek(package_file, entries[i].offset, SEEK_SET))
         {
             // Package file corrupted
             package_close(package);
             return 1;
         }
 
-        if (fread(file_data, 1, package->entries[i].entry.size, package_file) != package->entries[i].entry.size)
+        if (fread(file_data, 1, entries[i].size, package_file) != entries[i].size)
         {
             // Package file corrupted
             package_close(package);
             return 1;
         }
 
-        xor_file_data(&package->entries[i].entry, file_data);
+        xor_file_data(&entries[i], file_data);
 
-        package->entries[i].data = file_data;
+        if (add_package_file(package, &entries[i], file_data))
+        {
+            // Out of memory
+            free(entries);
+            package_close(package);
+            return 1;
+        }
     }
+
+    free(entries);
 
     return 0;
 }
@@ -173,7 +240,7 @@ uint32_t package_save(package_t *package, const char *path)
     data_offset = 4;
     for (uint32_t i = 0; i != package->num_entries; ++i)
     {
-        data_offset += package->entries[i].entry.size;
+        data_offset += package->entries[i]->entry.size;
     }
 
     // calculate the file size
@@ -190,7 +257,7 @@ uint32_t package_save(package_t *package, const char *path)
     // write the file data
     for (uint32_t i = 0; i != package->num_entries; ++i)
     {
-        package_file_t *file = &package->entries[i];
+        package_file_t *file = package->entries[i];
         file->entry.offset = ftell(package_file);
         if (file->data)
         {
@@ -207,7 +274,7 @@ uint32_t package_save(package_t *package, const char *path)
     // write the entry table
     for (uint32_t i = 0; i != package->num_entries; ++i)
     {
-        package_file_t *file = &package->entries[i];
+        package_file_t *file = package->entries[i];
         xor_file_entry((uint8_t *)&file->entry, i, package->num_entries, file_size);
         if (fwrite(&file->entry, 0x10, 1, package_file) != 1)
         {
@@ -232,13 +299,14 @@ uint32_t package_save(package_t *package, const char *path)
 
 void package_close(package_t *package)
 {
-
     if (package->entries)
     {
         for (uint32_t i = 0; i != package->num_entries; ++i)
         {
-            if (package->entries[i].data)
-                free(package->entries[i].data);
+            if (package->entries[i]->data)
+                free(package->entries[i]->data);
+
+            free(package->entries[i]);
         }
 
         free(package->entries);
@@ -252,7 +320,7 @@ package_file_t *package_get_file(package_t *package, uint32_t index)
         return NULL;
     }
 
-    return &package->entries[index];
+    return package->entries[index];
 }
 
 uint32_t package_open_file_hash(package_t *package, package_file_t **entry, altv_hash_t hash)
@@ -264,9 +332,9 @@ uint32_t package_open_file_hash(package_t *package, package_file_t **entry, altv
 
     for (uint32_t i = 0; i < package->num_entries; ++i)
     {
-        if (package->entries[i].entry.hash.value == hash.value)
+        if (package->entries[i]->entry.hash.value == hash.value)
         {
-            *entry = &package->entries[i];
+            *entry = package->entries[i];
             return 0;
         }
     }
@@ -284,26 +352,44 @@ package_file_t *package_add_file(package_t *package, const char *file_name)
     // if there are no entries, allocate the entries
     if (package->entries == NULL)
     {
-        package->entries = (package_file_t *)malloc(sizeof(package_file_t));
+        package->entries = (package_file_t **)malloc(sizeof(package_file_t*));
         if (package->entries == NULL)
         {
-            return 0;
+            return NULL;
         }
+
+        package->entries[0] = (package_file_t *)malloc(sizeof(package_file_t));
+        if (package->entries[0] == NULL)
+        {
+            free(package->entries);
+            return NULL;
+        }
+
+        memset(package->entries[0], 0, sizeof(package_file_t));
     }
     else
     {
         // realloc the entries
-        package_file_t *new_entries = (package_file_t *)realloc(package->entries, sizeof(package_file_t) * (package->num_entries + 1));
+        package_file_t **new_entries = (package_file_t **)realloc(package->entries, sizeof(package_file_t*) * (package->num_entries + 1));
         if (new_entries == NULL)
         {
             return 0;
         }
 
         package->entries = new_entries;
+
+        package->entries[package->num_entries] = (package_file_t *)malloc(sizeof(package_file_t));
+        if (package->entries[package->num_entries] == NULL)
+        {
+            free(package->entries);
+            return NULL;
+        }
+
+        memset(package->entries[package->num_entries], 0, sizeof(package_file_t));
     }
 
     // set the new entry
-    package_file_t *entry = &package->entries[package->num_entries];
+    package_file_t *entry = package->entries[package->num_entries];
 
     entry->entry.hash = altv_hash(file_name, strlen(file_name));
 

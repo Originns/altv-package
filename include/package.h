@@ -17,7 +17,7 @@ typedef struct package_file_t package_file_t;
 typedef struct
 {
     uint32_t num_entries;
-    package_file_t *entries;
+    package_file_t** entries;
 } package_t;
 
 uint32_t package_open(package_t *package, const char *package_path);
