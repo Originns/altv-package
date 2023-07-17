@@ -35,7 +35,6 @@ uint32_t package_open(package_t *package, const char *package_path)
     if (package_file == NULL)
     {
         // File not found
-        printf("File not found\n");
         return 1;
     }
 
@@ -48,7 +47,6 @@ uint32_t package_open(package_t *package, const char *package_path)
     if (fread(&magic, 4, 1, package_file) != 1 || magic != PACKAGE_MAGIC)
     {
         // Not a package file
-        // printf("Not a package file\n");
         package_close(package);
         return 1;
     }
@@ -57,7 +55,6 @@ uint32_t package_open(package_t *package, const char *package_path)
     if (fseek(package_file, file_size - 4, SEEK_SET))
     {
         // Package file corrupted
-        // printf("Package file corrupted #1\n");
         package_close(package);
         return 1;
     }
@@ -65,7 +62,6 @@ uint32_t package_open(package_t *package, const char *package_path)
     if (fread(&package->num_entries, 4, 1, package_file) != 1)
     {
         // Package file corrupted
-        // printf("Package file corrupted #2\n");
         package_close(package);
         return 1;
     }
@@ -76,7 +72,6 @@ uint32_t package_open(package_t *package, const char *package_path)
     if (fseek(package_file, data_offset, SEEK_SET))
     {
         // Package file corrupted
-        // printf("Package file corrupted #3\n");
         package_close(package);
         return 1;
     }
@@ -85,7 +80,6 @@ uint32_t package_open(package_t *package, const char *package_path)
     if (package->entries == NULL)
     {
         // Out of memory
-        // printf("Out of memory\n");
         package_close(package);
         return 1;
     }
@@ -95,7 +89,6 @@ uint32_t package_open(package_t *package, const char *package_path)
         if (fread(&package->entries[i].entry, 0x10, 1, package_file) != 1)
         {
             // Package file corrupted
-            // printf("Package file corrupted #4\n");
             package_close(package);
             return 1;
         }
@@ -110,7 +103,6 @@ uint32_t package_open(package_t *package, const char *package_path)
         if (package->entries[i].entry.offset + package->entries[i].entry.size > data_offset)
         {
             // Package file corrupted
-            // printf("Package file corrupted #5\n");
             package_close(package);
             return 1;
         }
@@ -119,7 +111,6 @@ uint32_t package_open(package_t *package, const char *package_path)
         if (file_data == NULL)
         {
             // Out of memory
-            // printf("Out of memory #1\n");
             package_close(package);
             return 1;
         }
@@ -128,7 +119,6 @@ uint32_t package_open(package_t *package, const char *package_path)
         if (fseek(package_file, package->entries[i].entry.offset, SEEK_SET))
         {
             // Package file corrupted
-            // printf("Package file corrupted #6\n");
             package_close(package);
             return 1;
         }
@@ -136,7 +126,6 @@ uint32_t package_open(package_t *package, const char *package_path)
         if (fread(file_data, 1, package->entries[i].entry.size, package_file) != package->entries[i].entry.size)
         {
             // Package file corrupted
-            // printf("Package file corrupted #7\n");
             package_close(package);
             return 1;
         }
@@ -290,7 +279,6 @@ uint32_t package_open_file_cstr(package_t *package, package_file_t **entry, cons
     return package_open_file_hash(package, entry, altv_hash(file_name, strlen(file_name)));
 }
 
-// functions to add or remove files from the package
 package_file_t *package_add_file(package_t *package, const char *file_name)
 {
     // if there are no entries, allocate the entries
