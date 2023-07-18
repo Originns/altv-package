@@ -15,7 +15,7 @@ git clone https://github.com/Originns/altv-package.git
 cd altv-package
 mkdir build
 cd build
-cmake ..
+cmake .. -DBUILD_EXAMPLE
 cmake --build . --config Release
 ```
 
@@ -26,6 +26,6 @@ git clone https://github.com/Originns/altv-package.git
 cd altv-package
 mkdir build
 cd build
-cmake ..
+cmake .. -DBUILD_EXAMPLE
 cmake --build .
 ```
