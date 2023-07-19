@@ -73,9 +73,10 @@ uint32_t package_murmurhash3(const char *key, uint32_t len)
 
 uint32_t package_joaat(const char *key, uint32_t len)
 {
-    uint32_t hash = 0;
+    uint32_t hash;
+    uint32_t i;
 
-    for (uint32_t i = 0; i < len; i++)
+    for (i = 0, hash = 0; i < len; ++i)
     {
         hash += tolower(key[i]);
         hash += (hash << 10);
@@ -87,7 +88,9 @@ uint32_t package_joaat(const char *key, uint32_t len)
     hash += (hash << 15);
 
     if (hash < 2)
+    {
         hash += 2;
+    }
 
     return hash;
 }

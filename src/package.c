@@ -6,6 +6,8 @@
 
 #include "xor.h"
 
+#define PACKAGE_MAGIC 0x544c41 // "ALT"
+
 struct package_file_t
 {
     file_entry_t entry;
@@ -15,13 +17,15 @@ struct package_file_t
 
 uint32_t package_open(package_t *package, const char *package_path)
 {
+    uint32_t i;
     uint32_t magic;
     uint32_t entry_table_size;
-    uint8_t *file_data;
     uint32_t data_offset;
     uint32_t file_size;
     file_entry_t *entries;
     FILE *package_file;
+    package_file_t *file;
+    uint8_t *file_data;
 
     if (package == NULL)
     {
@@ -48,6 +52,7 @@ uint32_t package_open(package_t *package, const char *package_path)
     if (fread(&magic, 4, 1, package_file) != 1 || magic != PACKAGE_MAGIC)
     {
         // Not a package file
+        fclose(package_file);
         package_close(package);
         return 1;
     }
@@ -56,6 +61,7 @@ uint32_t package_open(package_t *package, const char *package_path)
     if (fseek(package_file, file_size - 4, SEEK_SET))
     {
         // Package file corrupted
+        fclose(package_file);
         package_close(package);
         return 1;
     }
@@ -63,6 +69,7 @@ uint32_t package_open(package_t *package, const char *package_path)
     if (fread(&package->num_entries, 4, 1, package_file) != 1)
     {
         // Package file corrupted
+        fclose(package_file);
         package_close(package);
         return 1;
     }
@@ -73,6 +80,7 @@ uint32_t package_open(package_t *package, const char *package_path)
     if (fseek(package_file, data_offset, SEEK_SET))
     {
         // Package file corrupted
+        fclose(package_file);
         package_close(package);
         return 1;
     }
@@ -81,6 +89,7 @@ uint32_t package_open(package_t *package, const char *package_path)
     if (package->entries == NULL)
     {
         // Out of memory
+        fclose(package_file);
         package_close(package);
         return 1;
     }
@@ -89,17 +98,18 @@ uint32_t package_open(package_t *package, const char *package_path)
     if (entries == NULL)
     {
         // Out of memory
-        free(entries);
+        fclose(package_file);
         package_close(package);
         return 1;
     }
 
-    for (uint32_t i = 0; i != package->num_entries; ++i)
+    for (i = 0; i != package->num_entries; ++i)
     {
         if (fseek(package_file, data_offset + i * 0x10, SEEK_SET))
         {
             // Package file corrupted
             free(entries);
+            fclose(package_file);
             package_close(package);
             return 1;
         }
@@ -108,6 +118,7 @@ uint32_t package_open(package_t *package, const char *package_path)
         {
             // Package file corrupted
             free(entries);
+            fclose(package_file);
             package_close(package);
             return 1;
         }
@@ -118,6 +129,8 @@ uint32_t package_open(package_t *package, const char *package_path)
         if (entries[i].offset + entries[i].size > data_offset)
         {
             // Package file corrupted
+            free(entries);
+            fclose(package_file);
             package_close(package);
             return 1;
         }
@@ -126,6 +139,8 @@ uint32_t package_open(package_t *package, const char *package_path)
         if (file_data == NULL)
         {
             // Out of memory
+            free(entries);
+            fclose(package_file);
             package_close(package);
             return 1;
         }
@@ -134,6 +149,9 @@ uint32_t package_open(package_t *package, const char *package_path)
         if (fseek(package_file, entries[i].offset, SEEK_SET))
         {
             // Package file corrupted
+            free(file_data);
+            free(entries);
+            fclose(package_file);
             package_close(package);
             return 1;
         }
@@ -141,17 +159,22 @@ uint32_t package_open(package_t *package, const char *package_path)
         if (fread(file_data, 1, entries[i].size, package_file) != entries[i].size)
         {
             // Package file corrupted
+            free(file_data);
+            free(entries);
+            fclose(package_file);
             package_close(package);
             return 1;
         }
 
         xor_file_data(&entries[i], file_data);
 
-        package_file_t *file = (package_file_t *)malloc(sizeof(package_file_t));
+        file = (package_file_t *)malloc(sizeof(package_file_t));
         if (file == NULL)
         {
             // Out of memory
             free(file_data);
+            free(entries);
+            fclose(package_file);
             package_close(package);
             return 1;
         }
@@ -163,6 +186,7 @@ uint32_t package_open(package_t *package, const char *package_path)
     }
 
     free(entries);
+    fclose(package_file);
 
     return 0;
 }
@@ -182,10 +206,14 @@ uint32_t package_create(package_t *package)
 // save a package to disk
 uint32_t package_save(package_t *package, const char *path)
 {
+    FILE *package_file;
+    package_file_t *file;
     uint32_t entry_table_size;
     uint32_t data_offset;
     uint32_t file_size;
-    FILE *package_file;
+    uint32_t magic;
+    uint32_t i;
+    size_t written;
 
     // open the file
     package_file = fopen(path, "wb");
@@ -200,7 +228,7 @@ uint32_t package_save(package_t *package, const char *path)
 
     // calculate the data offset
     data_offset = 4;
-    for (uint32_t i = 0; i != package->num_entries; ++i)
+    for (i = 0; i != package->num_entries; ++i)
     {
         data_offset += package->entries[i]->entry.size;
     }
@@ -209,7 +237,7 @@ uint32_t package_save(package_t *package, const char *path)
     file_size = data_offset + entry_table_size + 4;
 
     // write the magic
-    uint32_t magic = PACKAGE_MAGIC;
+    magic = PACKAGE_MAGIC;
     if (fwrite(&magic, 4, 1, package_file) != 1)
     {
         // Failed to write to file
@@ -217,40 +245,46 @@ uint32_t package_save(package_t *package, const char *path)
     }
 
     // write the file data
-    for (uint32_t i = 0; i != package->num_entries; ++i)
+    for (i = 0; i != package->num_entries; ++i)
     {
-        package_file_t *file = package->entries[i];
+        file = package->entries[i];
         file->entry.offset = ftell(package_file);
         if (file->data)
         {
             xor_file_data(&file->entry, file->data);
-            if (fwrite(file->data, 1, file->entry.size, package_file) != file->entry.size)
+            written = fwrite(file->data, 1, file->entry.size, package_file);
+            xor_file_data(&file->entry, file->data);
+
+            if (written != file->entry.size)
             {
                 // Failed to write to file
+                fclose(package_file);
                 return 1;
             }
-            xor_file_data(&file->entry, file->data);
         }
     }
 
     // write the entry table
-    for (uint32_t i = 0; i != package->num_entries; ++i)
+    for (i = 0; i != package->num_entries; ++i)
     {
-        package_file_t *file = package->entries[i];
+        file = package->entries[i];
         xor_file_entry((uint8_t *)&file->entry, i, package->num_entries, file_size);
-        if (fwrite(&file->entry, 0x10, 1, package_file) != 1)
+        written = fwrite(&file->entry, 0x10, 1, package_file);
+        xor_file_entry((uint8_t *)&file->entry, i, package->num_entries, file_size);
+
+        if (written != 1)
         {
             // Failed to write to file
+            fclose(package_file);
             return 1;
         }
-
-        xor_file_entry((uint8_t *)&file->entry, i, package->num_entries, file_size);
     }
 
     // write the entry count
     if (fwrite(&package->num_entries, 4, 1, package_file) != 1)
     {
         // Failed to write to file
+        fclose(package_file);
         return 1;
     }
 
@@ -261,12 +295,16 @@ uint32_t package_save(package_t *package, const char *path)
 
 void package_close(package_t *package)
 {
+    uint32_t i;
+
     if (package->entries)
     {
-        for (uint32_t i = 0; i != package->num_entries; ++i)
+        for (i = 0; i != package->num_entries; ++i)
         {
             if (package->entries[i]->data)
+            {
                 free(package->entries[i]->data);
+            }
 
             free(package->entries[i]);
         }
@@ -277,7 +315,7 @@ void package_close(package_t *package)
     memset(package, 0, sizeof(package_t));
 }
 
-package_file_t *package_get_file(package_t *package, uint32_t index)
+package_file_t *package_open_file_idx(package_t *package, uint32_t index)
 {
     if (index >= package->num_entries)
     {
@@ -287,40 +325,41 @@ package_file_t *package_get_file(package_t *package, uint32_t index)
     return package->entries[index];
 }
 
-uint32_t package_open_file_hash(package_t *package, package_file_t **entry, altv_hash_t hash)
+package_file_t *package_open_file_hash(package_t *package, altv_hash_t hash)
 {
-    if (package->num_entries == 0)
-    {
-        return 1;
-    }
+    uint32_t i;
 
-    for (uint32_t i = 0; i < package->num_entries; ++i)
+    for (i = 0; i < package->num_entries; ++i)
     {
         if (package->entries[i]->entry.hash.value == hash.value)
         {
-            *entry = package->entries[i];
-            return 0;
+            return package->entries[i];
         }
     }
 
-    return 1;
+    return NULL;
 }
 
-uint32_t package_open_file_cstr(package_t *package, package_file_t **entry, const char *file_name)
+package_file_t *package_open_file_cstr(package_t *package, const char *file_name)
 {
-    return package_open_file_hash(package, entry, altv_hash(file_name, strlen(file_name)));
+    return package_open_file_hash(package, altv_hash(file_name, strlen(file_name)));
 }
 
-package_file_t *package_add_file(package_t *package, const char *file_name)
+package_file_t *package_create_file(package_t *package, const char *file_name)
 {
+    package_file_t *entry;
+    package_file_t **new_entries;
+
     // if there are no entries, allocate the entries
     if (package->entries == NULL)
     {
-        package->entries = (package_file_t **)malloc(sizeof(package_file_t *));
-        if (package->entries == NULL)
+        new_entries = (package_file_t **)malloc(sizeof(package_file_t *));
+        if (new_entries == NULL)
         {
             return NULL;
         }
+
+        package->entries = new_entries;
 
         package->entries[0] = (package_file_t *)malloc(sizeof(package_file_t));
         if (package->entries[0] == NULL)
@@ -334,7 +373,7 @@ package_file_t *package_add_file(package_t *package, const char *file_name)
     else
     {
         // realloc the entries
-        package_file_t **new_entries = (package_file_t **)realloc(package->entries, sizeof(package_file_t *) * (package->num_entries + 1));
+        new_entries = (package_file_t **)realloc(package->entries, sizeof(package_file_t *) * (package->num_entries + 1));
         if (new_entries == NULL)
         {
             return 0;
@@ -353,7 +392,7 @@ package_file_t *package_add_file(package_t *package, const char *file_name)
     }
 
     // set the new entry
-    package_file_t *entry = package->entries[package->num_entries];
+    entry = package->entries[package->num_entries];
 
     entry->entry.hash = altv_hash(file_name, strlen(file_name));
 
@@ -364,17 +403,17 @@ package_file_t *package_add_file(package_t *package, const char *file_name)
     return entry;
 }
 
-uint32_t package_file_seek(package_file_t *entry, uint32_t offset, seekorigin_t origin)
+uint32_t package_file_seek(package_file_t *entry, uint32_t offset, int origin)
 {
     switch (origin)
     {
-    case PKG_SEEK_SET:
+    case SEEK_SET:
         entry->pos = offset;
         break;
-    case PKG_SEEK_CUR:
+    case SEEK_CUR:
         entry->pos += offset;
         break;
-    case PKG_SEEK_END:
+    case SEEK_END:
         entry->pos = entry->entry.size - offset;
         break;
     default:
@@ -406,6 +445,8 @@ uint32_t package_file_read(package_file_t *entry, uint8_t *buffer, uint32_t size
 
 uint32_t package_file_write(package_file_t *entry, uint8_t *buffer, uint32_t size)
 {
+    uint8_t *new_data;
+
     if (entry->pos + size > entry->entry.size)
     {
         // if there is no data, allocate the data
@@ -420,7 +461,7 @@ uint32_t package_file_write(package_file_t *entry, uint8_t *buffer, uint32_t siz
         else
         {
             // realloc the data
-            uint8_t *new_data = (uint8_t *)realloc(entry->data, entry->pos + size);
+            new_data = (uint8_t *)realloc(entry->data, entry->pos + size);
             if (new_data == NULL)
             {
                 return 0;
@@ -446,6 +487,8 @@ uint32_t package_file_tell(package_file_t *file)
 
 uint32_t package_file_truncate(package_file_t *file, uint32_t size)
 {
+    uint8_t *new_data;
+
     if (size > file->entry.size)
     {
         return 0;
@@ -456,7 +499,7 @@ uint32_t package_file_truncate(package_file_t *file, uint32_t size)
     // only realloc if the size is less than 1/4 of the current size
     if (size < file->entry.size / 4)
     {
-        uint8_t *new_data = (uint8_t *)realloc(file->data, size);
+        new_data = (uint8_t *)realloc(file->data, size);
         if (new_data == NULL)
         {
             return 0;
