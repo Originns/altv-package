@@ -64,7 +64,6 @@ bool extract_package(fs::path input_file, fs::path output_dir)
 
 int main(int argc, char **argv)
 {
-    package_t package;
     std::map<std::string, std::string> args;
 
     for (int i = 1; i < argc; i++)
