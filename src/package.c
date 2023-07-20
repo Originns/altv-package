@@ -49,7 +49,7 @@ uint32_t package_open(package_t *package, const char *package_path)
     fseek(package_file, 0, SEEK_SET);
 
     // read the magic
-    if (fread(&magic, 4, 1, package_file) != 1 || magic != PACKAGE_MAGIC)
+    if (fread(&magic, sizeof(uint32_t), 1, package_file) != 1 || magic != PACKAGE_MAGIC)
     {
         // Not a package file
         fclose(package_file);
@@ -58,7 +58,7 @@ uint32_t package_open(package_t *package, const char *package_path)
     }
 
     // read the entry count
-    if (fseek(package_file, file_size - 4, SEEK_SET))
+    if (fseek(package_file, file_size - sizeof(uint32_t), SEEK_SET))
     {
         // Package file corrupted
         fclose(package_file);
@@ -66,7 +66,7 @@ uint32_t package_open(package_t *package, const char *package_path)
         return 1;
     }
 
-    if (fread(&package->num_entries, 4, 1, package_file) != 1)
+    if (fread(&package->num_entries, sizeof(uint32_t), 1, package_file) != 1)
     {
         // Package file corrupted
         fclose(package_file);
@@ -105,7 +105,7 @@ uint32_t package_open(package_t *package, const char *package_path)
 
     for (i = 0; i != package->num_entries; ++i)
     {
-        if (fseek(package_file, data_offset + i * 0x10, SEEK_SET))
+        if (fseek(package_file, data_offset + i * sizeof(file_entry_t), SEEK_SET))
         {
             // Package file corrupted
             free(entries);
@@ -114,7 +114,7 @@ uint32_t package_open(package_t *package, const char *package_path)
             return 1;
         }
 
-        if (fread(&entries[i], 0x10, 1, package_file) != 1)
+        if (fread(&entries[i], sizeof(file_entry_t), 1, package_file) != 1)
         {
             // Package file corrupted
             free(entries);
@@ -238,7 +238,7 @@ uint32_t package_save(package_t *package, const char *path)
 
     // write the magic
     magic = PACKAGE_MAGIC;
-    if (fwrite(&magic, 4, 1, package_file) != 1)
+    if (fwrite(&magic, sizeof(uint32_t), 1, package_file) != 1)
     {
         // Failed to write to file
         return 1;
@@ -269,7 +269,7 @@ uint32_t package_save(package_t *package, const char *path)
     {
         file = package->entries[i];
         xor_file_entry((uint8_t *)&file->entry, i, package->num_entries, file_size);
-        written = fwrite(&file->entry, 0x10, 1, package_file);
+        written = fwrite(&file->entry, sizeof(file_entry_t), 1, package_file);
         xor_file_entry((uint8_t *)&file->entry, i, package->num_entries, file_size);
 
         if (written != 1)
@@ -281,7 +281,7 @@ uint32_t package_save(package_t *package, const char *path)
     }
 
     // write the entry count
-    if (fwrite(&package->num_entries, 4, 1, package_file) != 1)
+    if (fwrite(&package->num_entries, sizeof(uint32_t), 1, package_file) != 1)
     {
         // Failed to write to file
         fclose(package_file);
@@ -376,7 +376,7 @@ package_file_t *package_create_file(package_t *package, const char *file_name)
         new_entries = (package_file_t **)realloc(package->entries, sizeof(package_file_t *) * (package->num_entries + 1));
         if (new_entries == NULL)
         {
-            return 0;
+            return NULL;
         }
 
         package->entries = new_entries;
