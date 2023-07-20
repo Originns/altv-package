@@ -4,7 +4,7 @@ A robust C library for creating, decoding, and manipulating Alt:V package files
 
 ## Usage
 
-See [example](./example/example.c) for usage.
+See [example](./example/extract_package/main.cpp) for usage.
 
 ## Building
 
